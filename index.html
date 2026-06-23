@@ -1,0 +1,931 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Timetable</title>
+
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
+
+  <style>
+    [v-cloak] { display: none; }
+
+    body {
+      padding: 2rem;
+      background: #fff;
+    }
+
+    .toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-bottom: 1.5rem;
+    }
+
+    .schedule {
+      display: grid;
+      grid-template-columns: 2.5rem repeat(8, 1fr);
+      grid-template-rows: 2rem;
+      grid-auto-rows: 9px;
+      gap: 4px;
+      font-family: "Yu Gothic", -apple-system, BlinkMacSystemFont, sans-serif;
+      margin-bottom: 3rem;
+    }
+
+    .row-sizer {
+      grid-column: 1 / -1;
+      height: 4rem;
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    .day {
+      grid-row: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      font-weight: 600;
+      font-size: 0.9rem;
+      background: #f1f3f5;
+      border: 1px solid #dee2e6;
+      padding: .3rem 0;
+      border-radius: 4px;
+    }
+
+    .time {
+      grid-column: 1;
+      display: flex;
+      align-items: flex-start;
+      justify-content: flex-end;
+      padding-right: .4rem;
+      border-right: 2px solid #ced4da;
+      font-weight: 500;
+      white-space: nowrap;
+      font-size: 0.7rem;
+      color: #6c757d;
+    }
+
+    .event {
+      border: 1px solid #adb5bd;
+      padding: .25rem .2rem;
+      overflow: hidden;
+      line-height: 1.3;
+      font-size: .8rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      color: #212529;
+      border-radius: 4px;
+      transition: all 0.2s ease;
+    }
+
+    .event:hover {
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
+      transform: translateY(-1px);
+    }
+
+    .event a {
+      text-decoration: none;
+      font-weight: 500;
+    }
+
+    ruby rt { display: none; }
+
+
+    /* ===== 発表一覧（timetable.html に合わせたシンプル表示） ===== */
+    .program-section {
+      margin-top: 4rem;
+    }
+
+    .program-day-heading {
+      margin-top: 4rem;
+      margin-bottom: 1rem;
+      font-size: 1.6rem;
+      font-weight: 600;
+    }
+
+    .program-session {
+      margin-bottom: 1.8rem;
+    }
+
+    .session-title {
+      font-weight: 600;
+    }
+
+    .session-meta {
+      margin-bottom: .4rem;
+      color: #555;
+    }
+
+    .program-list {
+      margin-left: 1rem;
+      padding-left: 0;
+    }
+
+    .program-list li {
+      margin-bottom: .6rem;
+    }
+
+    .presentation-id-badge {
+      display: inline-block;
+      width: 5rem;
+      margin-right: .5rem;
+      text-align: center;
+      vertical-align: middle;
+    }
+
+    .presentation-title {
+      font-weight: 500;
+    }
+
+    .presentation-author {
+      font-size: .9rem;
+      color: #555;
+    }
+
+    @media (max-width: 768px) {
+      body { padding: 1rem; }
+      .schedule { font-size: 0.65rem; grid-auto-rows: 6px; gap: 2px; }
+      .day { font-size: 0.65rem; padding: .1rem 0; }
+      .time { font-size: 0.55rem; padding-right: .2rem; }
+      .event { font-size: 0.55rem; padding: 0; line-height: 1.1; }
+      .event i { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <main id="timetableApp" class="container-fluid" v-cloak>
+    <div class="toolbar">
+      <h1 class="h3 mb-0" v-text="uiTitle"></h1>
+
+      <div class="btn-group" role="group" aria-label="Language switcher">
+        <button
+          type="button"
+          class="btn btn-sm"
+          :class="langSuffix === 'jp' ? 'btn-primary' : 'btn-outline-primary'"
+          @click="setLanguage('jp')">
+          日本語
+        </button>
+        <button
+          type="button"
+          class="btn btn-sm"
+          :class="langSuffix === 'en' ? 'btn-primary' : 'btn-outline-primary'"
+          @click="setLanguage('en')">
+          English
+        </button>
+      </div>
+    </div>
+
+    <div v-if="loading" class="text-center my-5">
+      <div class="spinner-border text-primary" role="status"></div>
+      <p class="mt-2 text-muted" v-text="loadingText"></p>
+    </div>
+
+    <p v-if="errored" class="alert alert-danger" v-text="error"></p>
+
+    <div v-if="!loading && !errored">
+      <div class="small text-muted mb-3">
+        <span>schedule sheet: </span><code v-text="sheetNames.schedule"></code>
+        <span class="ms-3">active rows: </span><code v-text="debug.activeScheduleRows"></code>
+        <span class="ms-3">events: </span><code v-text="events.length"></code>
+        <span class="ms-3">days: </span><code v-text="dayHeaders.length"></code>
+      </div>
+
+      <p v-if="events.length === 0" class="alert alert-warning">
+        表示対象のイベントがありません。schedule シートの active, date, start, end, label_jp / label_en を確認してください。
+      </p>
+
+      <div v-if="events.length > 0" class="schedule" :style="scheduleGridStyle">
+        <template v-for="day in dayHeaders">
+          <div
+            class="day"
+            :key="'day-' + day.date"
+            :style="{ gridColumn: dayColumnStart(day) + ' / span ' + maxTracks }"
+            v-text="day.label">
+          </div>
+        </template>
+
+        <template v-for="t in timeLabels">
+          <div
+            class="time"
+            :key="'time-' + t.text"
+            :style="{ gridRow: t.row + ' / span ' + t.span }"
+            v-text="t.text">
+          </div>
+        </template>
+
+        <template v-for="idx in totalRows">
+          <div
+            class="row-sizer"
+            :key="'row-sizer-' + idx"
+            :style="{ gridRow: idx + 1 }">
+          </div>
+        </template>
+
+        <template v-for="ev in events">
+          <div
+            class="event"
+            :key="ev.key"
+            :class="ev.type"
+            :style="eventStyle(ev)">
+            <a v-if="ev.show_program" :href="'#' + ev.session_code" class="text-dark">
+              <i class="fas fa-info-circle me-1"></i>
+              <span v-html="ev.label"></span>
+            </a>
+            <span v-else>
+              <span v-html="ev.label"></span>
+            </span>
+          </div>
+        </template>
+      </div>
+
+      <div class="text-start program-section">
+        <template v-for="day in days">
+          <h2
+            :key="'heading-' + day.date"
+            class="program-day-heading">
+            <i class="fas fa-calendar-alt me-2"></i>
+            <span v-text="formatDate(day.date)"></span>
+          </h2>
+
+          <div
+            v-for="sess in day.sessions"
+            :key="sess.session_code"
+            class="program-session">
+            <h4 class="mb-1">
+              <span class="session-title" v-text="sess.title"></span>
+            </h4>
+
+            <p class="small session-meta" :id="sess.session_code">
+              <i class="fas fa-clock me-1"></i>
+              <span v-text="sess.start + '–' + sess.end"></span>
+              <span v-if="sess.venue"> | <span v-text="sess.venue"></span></span>
+              <span v-if="sess.chair"> | <span v-text="chairLabel"></span>: <span v-text="sess.chair"></span></span>
+            </p>
+
+            <ul class="list-unstyled program-list">
+              <li
+                v-for="p in sess.presentations"
+                :key="p.presentation_id">
+                <span
+                  v-if="isTruthy(p.show_id)"
+                  class="badge badge-secondary bg-secondary presentation-id-badge"
+                  v-text="p.presentation_id">
+                </span>
+                <span class="presentation-title">
+                  <span
+                    v-if="isTruthy(p.show_paper_id) && p.paper_id"
+                    v-text="'Paper ID: ' + p.paper_id">
+                  </span>
+
+                  <span v-else>
+                    <a
+                      v-if="p.link"
+                      :href="p.link"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      v-text="p.title">
+                    </a>
+                    <span v-else v-text="p.title"></span>
+                  </span>
+                </span>
+                <br>
+                <span
+                  v-if="!(isTruthy(p.show_paper_id) && p.paper_id)"
+                  class="presentation-author"
+                  v-text="p.authors">
+                </span>
+              </li>
+            </ul>
+          </div>
+        </template>
+      </div>
+    </div>
+  </main>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/2.6.14/vue.min.js"></script>
+
+  <script>
+    const GAS_BASE_URL = 'https://script.google.com/macros/s/AKfycbzFxj_Sao5VwfKol_gqhiz_MrDEX0KnNo0eo1IQ6lEw8OMuIHPWFfvw4quo3RT3UzXrGg/exec';
+
+    const SHEETS = {
+      schedule: 'schedule-test',
+      presentations: 'presentations-test',
+      sessionItems: 'session-items-test',
+      colorScheme: 'color_scheme',
+      settings: 'settings-test'
+    };
+
+    const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+    const GOOGLE_SHEETS_EPOCH_OFFSET_DAYS = 25569;
+
+    function initialLangSuffix() {
+      const urlLang = new URLSearchParams(location.search).get('lang');
+      if (urlLang === 'en') return 'en';
+      if (urlLang === 'ja' || urlLang === 'jp') return 'jp';
+      return document.documentElement.lang === 'en' ? 'en' : 'jp';
+    }
+
+    function sheetURL(sheetName) {
+      return `${GAS_BASE_URL}?sheet=${encodeURIComponent(sheetName)}`;
+    }
+
+    async function fetchSheet(sheetName) {
+      const res = await fetch(sheetURL(sheetName), { cache: 'no-store' });
+      if (!res.ok) {
+        throw new Error(`Failed to fetch ${sheetName}: ${res.status} ${res.statusText}`);
+      }
+      return await res.json();
+    }
+
+    async function fetchAllSheets() {
+      const [schedule, presentations, sessionItems, colorScheme, settings] = await Promise.all([
+        fetchSheet(SHEETS.schedule),
+        fetchSheet(SHEETS.presentations),
+        fetchSheet(SHEETS.sessionItems),
+        fetchSheet(SHEETS.colorScheme),
+        fetchSheet(SHEETS.settings)
+      ]);
+
+      return { schedule, presentations, sessionItems, colorScheme, settings };
+    }
+
+    function toBool(value) {
+      return String(value).toLowerCase().trim() === 'true';
+    }
+
+    function toNumber(value, fallback) {
+      const n = Number(value);
+      return Number.isFinite(n) ? n : fallback;
+    }
+
+    function superNormalize(raw) {
+      if (!raw) return [];
+
+      if (typeof raw === 'string') {
+        try {
+          raw = JSON.parse(raw);
+        } catch (e) {
+          console.error('JSON parse error:', e);
+          return [];
+        }
+      }
+
+      if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+        if (Array.isArray(raw.values)) raw = raw.values;
+        else if (Array.isArray(raw.data)) raw = raw.data;
+      }
+
+      if (!Array.isArray(raw) || raw.length === 0) return [];
+
+      if (typeof raw[0] === 'object' && !Array.isArray(raw[0])) {
+        return raw.map(obj => {
+          const clean = {};
+          Object.keys(obj).forEach(k => {
+            clean[String(k).toLowerCase().trim()] = obj[k];
+          });
+          return clean;
+        });
+      }
+
+      if (Array.isArray(raw[0])) {
+        const headers = raw[0].map(h => String(h).toLowerCase().trim());
+        return raw.slice(1).map(row => {
+          const clean = {};
+          headers.forEach((key, i) => {
+            clean[key] = row[i] !== undefined ? row[i] : '';
+          });
+          return clean;
+        });
+      }
+
+      return [];
+    }
+
+    function parseSettings(rawData) {
+      const settings = {};
+      superNormalize(rawData).forEach(r => {
+        const key = String(r.key || '').trim();
+        if (!key) return;
+        settings[key] = r.value;
+      });
+      return settings;
+    }
+
+    function activeScheduleRows(rawScheduleData) {
+      return superNormalize(rawScheduleData).filter(r => toBool(r.active));
+    }
+
+    function googleSerialToDate(serial) {
+      return new Date((serial - GOOGLE_SHEETS_EPOCH_OFFSET_DAYS) * 24 * 60 * 60 * 1000);
+    }
+
+    function dateValueToJstDateStr(value) {
+      if (value === undefined || value === null || value === '') return '';
+
+      if (typeof value === 'number') {
+        const d = googleSerialToDate(value);
+        if (isNaN(d.getTime())) return '';
+        return dateToYmdUTC(new Date(d.getTime() + JST_OFFSET_MS));
+      }
+
+      const s = String(value).trim();
+
+      const ymd = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+      if (ymd) {
+        const y = ymd[1];
+        const m = String(Number(ymd[2])).padStart(2, '0');
+        const d = String(Number(ymd[3])).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+      }
+
+      if (!isNaN(Number(s)) && Number(s) > 1) {
+        const d = googleSerialToDate(Number(s));
+        if (isNaN(d.getTime())) return '';
+        return dateToYmdUTC(new Date(d.getTime() + JST_OFFSET_MS));
+      }
+
+      const d = new Date(value);
+      if (isNaN(d.getTime())) return '';
+      return dateToYmdUTC(new Date(d.getTime() + JST_OFFSET_MS));
+    }
+
+    function dateToYmdUTC(d) {
+      const y = d.getUTCFullYear();
+      const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(d.getUTCDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    }
+
+    function timeValueToMin(value) {
+      if (value === undefined || value === null || value === '') return NaN;
+
+      if (typeof value === 'number') {
+        const fraction = value >= 1 ? value - Math.floor(value) : value;
+        return Math.round(fraction * 24 * 60);
+      }
+
+      const s = String(value).trim();
+
+      const hm = s.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+      if (hm) {
+        return Number(hm[1]) * 60 + Number(hm[2]);
+      }
+
+      if (!isNaN(Number(s))) {
+        const n = Number(s);
+        if (n > 0) {
+          const fraction = n >= 1 ? n - Math.floor(n) : n;
+          return Math.round(fraction * 24 * 60);
+        }
+      }
+
+      const d = new Date(value);
+      if (!isNaN(d.getTime())) {
+        const jst = new Date(d.getTime() + JST_OFFSET_MS);
+        return jst.getUTCHours() * 60 + jst.getUTCMinutes();
+      }
+
+      console.warn('Invalid time value:', value);
+      return NaN;
+    }
+
+    function minToTimeStr(min) {
+      const h = Math.floor(min / 60);
+      const m = min % 60;
+      return `${h}:${String(m).padStart(2, '0')}`;
+    }
+
+    function floorToInterval(min, interval) {
+      return Math.floor(min / interval) * interval;
+    }
+
+    function ceilToInterval(min, interval) {
+      return Math.ceil(min / interval) * interval;
+    }
+
+    function getScheduleDateList(rawScheduleData) {
+      const dates = activeScheduleRows(rawScheduleData)
+        .map(r => dateValueToJstDateStr(r.date))
+        .filter(Boolean);
+
+      return [...new Set(dates)].sort();
+    }
+
+    function makeDayHeadersFromSchedule(rawScheduleData, langSuffix) {
+      return getScheduleDateList(rawScheduleData).map((dateStr, index) => ({
+        date: dateStr,
+        label: formatDateLabel(dateStr, langSuffix),
+        dayIndex: index
+      }));
+    }
+
+    function getScheduleTimeRange(rawScheduleData, fallbackStartMin, fallbackEndMin) {
+      const starts = [];
+      const ends = [];
+
+      activeScheduleRows(rawScheduleData).forEach(r => {
+        const start = timeValueToMin(r.start);
+        const end = timeValueToMin(r.end);
+
+        if (Number.isFinite(start)) starts.push(start);
+        if (Number.isFinite(end)) ends.push(end);
+      });
+
+      return {
+        startMin: starts.length ? Math.min(...starts) : fallbackStartMin,
+        endMin: ends.length ? Math.max(...ends) : fallbackEndMin
+      };
+    }
+
+    function makeTimeLabelsFromRange(startMin, endMin, intervalMin, baseMin, gridUnitMin) {
+      if (!Number.isFinite(startMin) || !Number.isFinite(endMin) || !Number.isFinite(baseMin)) {
+        console.warn('Invalid time label settings:', { startMin, endMin, intervalMin, baseMin, gridUnitMin });
+        return [];
+      }
+
+      const labels = [];
+
+      for (let min = startMin; min < endMin; min += intervalMin) {
+        labels.push({
+          text: minToTimeStr(min),
+          row: Math.round((min - baseMin) / gridUnitMin) + 2,
+          span: Math.max(1, Math.round(intervalMin / gridUnitMin))
+        });
+      }
+
+      return labels;
+    }
+
+    function formatDateLabel(dateStr, langSuffix) {
+      if (!dateStr) return '';
+
+      const [y, m, d] = dateStr.split('-').map(Number);
+      const dt = new Date(y, m - 1, d);
+
+      if (langSuffix === 'en') {
+        const months = ['Jan.', 'Feb.', 'Mar.', 'Apr.', 'May', 'Jun.', 'Jul.', 'Aug.', 'Sep.', 'Oct.', 'Nov.', 'Dec.'];
+        const wd = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][dt.getDay()];
+        return `${months[m - 1]} ${d} (${wd})`;
+      }
+
+      const wd = ['日', '月', '火', '水', '木', '金', '土'][dt.getDay()];
+      return `${m}/${d}（${wd}）`;
+    }
+
+    new Vue({
+      el: '#timetableApp',
+
+      data() {
+        const langSuffix = initialLangSuffix();
+
+        return {
+          sheetNames: SHEETS,
+          langSuffix,
+          loading: true,
+          errored: false,
+          error: null,
+
+          settings: {},
+          maxTracks: 2,
+          gridUnitMin: 5,
+          rowHeightPx: 9,
+          gridGapPx: 4,
+          baseMin: timeValueToMin('09:00'),
+          totalRows: 1,
+
+          dayHeaders: [],
+          timeLabels: [],
+          events: [],
+          days: [],
+          colorScheme: {},
+
+          debug: {
+            activeScheduleRows: 0
+          },
+
+          rawData: {
+            schedule: [],
+            presentations: [],
+            sessionItems: [],
+            colorScheme: [],
+            settings: []
+          }
+        };
+      },
+
+      computed: {
+        uiTitle() {
+          return this.langSuffix === 'en' ? 'Timetable' : 'タイムテーブル';
+        },
+
+        loadingText() {
+          return this.langSuffix === 'en' ? 'Loading the latest timetable...' : '最新のタイムテーブルを読み込み中...';
+        },
+
+        chairLabel() {
+          return this.langSuffix === 'en' ? 'Chair' : '座長';
+        },
+
+        scheduleGridStyle() {
+          return {
+            gridTemplateColumns: `2.5rem repeat(${this.dayHeaders.length * this.maxTracks}, 1fr)`,
+            gridAutoRows: `${this.rowHeightPx}px`,
+            gap: `${this.gridGapPx}px`
+          };
+        }
+      },
+
+      async mounted() {
+        try {
+          const data = await fetchAllSheets();
+          this.rawData = data;
+          this.initializeTimetable(data);
+        } catch (err) {
+          console.error('[timetable] failed to initialize:', err);
+          this.errored = true;
+          this.error = err.toString();
+        } finally {
+          this.loading = false;
+        }
+      },
+
+      methods: {
+        setLanguage(langSuffix) {
+          this.langSuffix = langSuffix;
+          document.documentElement.lang = langSuffix === 'en' ? 'en' : 'ja';
+          this.initializeTimetable(this.rawData);
+
+          const url = new URL(location.href);
+          url.searchParams.set('lang', langSuffix === 'en' ? 'en' : 'ja');
+          history.replaceState(null, '', url.toString());
+        },
+
+        initializeTimetable(data) {
+          this.settings = parseSettings(data.settings);
+
+          this.maxTracks = toNumber(this.settings.max_tracks, 2);
+          this.gridUnitMin = toNumber(this.settings.grid_unit_min, 5);
+          const timeLabelIntervalMin = toNumber(this.settings.time_label_interval_min, 60);
+          this.rowHeightPx = toNumber(this.settings.row_height_px, 9);
+          this.gridGapPx = toNumber(this.settings.grid_gap_px, 4);
+
+          const activeRows = activeScheduleRows(data.schedule);
+          this.debug.activeScheduleRows = activeRows.length;
+
+          this.dayHeaders = makeDayHeadersFromSchedule(data.schedule, this.langSuffix);
+
+          const fallbackStartMin = timeValueToMin(this.settings.fallback_start_time || '09:00');
+          const fallbackEndMin = timeValueToMin(this.settings.fallback_end_time || '20:30');
+          const rawRange = getScheduleTimeRange(data.schedule, fallbackStartMin, fallbackEndMin);
+
+          const startMin = floorToInterval(rawRange.startMin, timeLabelIntervalMin);
+          const endMin = ceilToInterval(rawRange.endMin, timeLabelIntervalMin);
+
+          this.baseMin = startMin;
+          this.totalRows = Math.ceil((endMin - this.baseMin) / this.gridUnitMin) + 2;
+          this.timeLabels = makeTimeLabelsFromRange(
+            startMin,
+            endMin,
+            timeLabelIntervalMin,
+            this.baseMin,
+            this.gridUnitMin
+          );
+
+          this.colorScheme = this.parseColorScheme(data.colorScheme);
+          this.events = this.parseScheduleGrid(data.schedule);
+          this.buildProgramList(data.schedule, data.presentations, data.sessionItems);
+        },
+
+        isTruthy(value) {
+          const s = String(value || '').toLowerCase().trim();
+          return ['true', '1', 'yes', 'y', 'on', '〇', '○'].includes(s);
+        },
+
+        localized(obj, base) {
+          if (!obj) return '';
+
+          const langKey = `${base}_${this.langSuffix}`;
+          const jpKey = `${base}_jp`;
+          const enKey = `${base}_en`;
+          const plainKey = base;
+
+          return obj[langKey] || obj[jpKey] || obj[enKey] || obj[plainKey] || '';
+        },
+
+        parseColorScheme(rawData) {
+          const map = {};
+
+          superNormalize(rawData).forEach(r => {
+            const type = String(r.type || '').trim();
+            if (!type) return;
+
+            map[type] = {
+              background: r.background || '',
+              borderColor: r.border_color || '',
+              color: r.color || '',
+              borderStyle: r.border_style || ''
+            };
+          });
+
+          return map;
+        },
+
+        parseTrack(raw) {
+          const maxTracks = this.maxTracks;
+          const s = String(raw || 'single').toLowerCase().trim();
+
+          if (!s || s === 'single' || s === 'all') {
+            return { offset: 1, span: maxTracks };
+          }
+
+          const m = s.match(/^track(\d+)(?:-(\d+))?$/);
+          if (!m) {
+            return { offset: 1, span: maxTracks };
+          }
+
+          let a = Number(m[1]);
+          let b = Number(m[2] || m[1]);
+
+          a = Math.max(1, Math.min(a, maxTracks));
+          b = Math.max(1, Math.min(b, maxTracks));
+
+          const start = Math.min(a, b);
+          const end = Math.max(a, b);
+
+          return {
+            offset: start,
+            span: end - start + 1
+          };
+        },
+
+        parseScheduleGrid(rawData) {
+          const evs = [];
+
+          activeScheduleRows(rawData).forEach((r, index) => {
+            const dateStr = dateValueToJstDateStr(r.date);
+            const startMin = timeValueToMin(r.start);
+            const endMin = timeValueToMin(r.end);
+
+            if (!dateStr || !Number.isFinite(startMin) || !Number.isFinite(endMin)) return;
+
+            const dayLeft = this.dateToColumnStart(dateStr);
+            const { offset, span } = this.parseTrack(r.track);
+            const col = dayLeft + (offset - 1);
+
+            evs.push({
+              key: `${dateStr}-${startMin}-${endMin}-${r.session_code || index}`,
+              column: col,
+              colSpan: span,
+              type: r.type || 'etc',
+              label: this.localized(r, 'label') || this.localized(r, 'title') || `${minToTimeStr(startMin)}–${minToTimeStr(endMin)}`,
+              start: minToTimeStr(startMin),
+              end: minToTimeStr(endMin),
+              show_program: toBool(r.show_program),
+              session_code: String(r.session_code || '').trim()
+            });
+          });
+
+          return evs;
+        },
+
+        buildProgramList(schData, presData, itmData) {
+          const scheduleList = activeScheduleRows(schData).filter(r => {
+            return toBool(r.show_program) && String(r.session_code || '').trim();
+          });
+
+          const presMap = {};
+          superNormalize(presData).forEach(p => {
+            const id = String(p.presentation_id || '').trim();
+            if (id) presMap[id] = p;
+          });
+
+          const itemsBySess = {};
+          superNormalize(itmData).forEach(i => {
+            const code = String(i.session_code || '').trim();
+            if (!code) return;
+
+            if (!itemsBySess[code]) itemsBySess[code] = [];
+            i.order = Number(i.order) || 0;
+            i.presentation_id = String(i.presentation_id || '').trim();
+            itemsBySess[code].push(i);
+          });
+
+          const dayMap = {};
+
+          scheduleList.forEach(s => {
+            const sessionCode = String(s.session_code || '').trim();
+            const dateStr = dateValueToJstDateStr(s.date);
+            const startMin = timeValueToMin(s.start);
+            const endMin = timeValueToMin(s.end);
+
+            if (!dateStr || !Number.isFinite(startMin) || !Number.isFinite(endMin)) return;
+            if (!dayMap[dateStr]) dayMap[dateStr] = { date: dateStr, sessions: [] };
+
+            const presentations = (itemsBySess[sessionCode] || [])
+              .sort((a, b) => a.order - b.order)
+              .filter(it => {
+                const id = String(it.presentation_id || '').trim();
+                // session-items に presentation_id があっても、presentations に存在しないIDは表示しない
+                return id && Object.prototype.hasOwnProperty.call(presMap, id);
+              })
+              .map(it => {
+                const id = String(it.presentation_id || '').trim();
+                // session-items は順序・所属セッション用、presentations は発表本体情報として優先する
+                // これにより、session-items 側の空欄列で presentations 側の title/authors 等が上書きされるのを防ぐ
+                const p = Object.assign({}, it, presMap[id] || {});
+
+                p.presentation_id = id;
+                p.title = this.localized(p, 'title') || id;
+                p.link = this.localized(p, 'link');
+                p.authors = p.authors || p.authors_jp || p.authors_en || '';
+                p.paper_id = String(p.paper_id || p.paperid || '').trim();
+
+                // 表示制御は session-items 側で指定されていればそれを優先し、未指定なら presentations 側を使う
+                p.show_id = it.show_id !== undefined && it.show_id !== '' ? it.show_id : p.show_id;
+                p.show_paper_id = it.show_paper_id !== undefined && it.show_paper_id !== '' ? it.show_paper_id : p.show_paper_id;
+
+                p.abs_start = it.abs_start || '';
+                p.abs_end = it.abs_end || '';
+                p.note = it.note || '';
+                return p;
+              });
+
+            dayMap[dateStr].sessions.push(Object.assign({}, s, {
+              title: this.localized(s, 'title') || this.localized(s, 'label'),
+              venue: this.localized(s, 'venue'),
+              chair: this.localized(s, 'chair'),
+              start: minToTimeStr(startMin),
+              end: minToTimeStr(endMin),
+              session_code: sessionCode,
+              presentations
+            }));
+          });
+
+          this.days = Object.values(dayMap)
+            .sort((a, b) => a.date.localeCompare(b.date))
+            .map(d => {
+              d.sessions.sort((a, b) => this.timeToMin(a.start) - this.timeToMin(b.start));
+              return d;
+            });
+        },
+
+        dateToColumnStart(dateStr) {
+          const index = this.dayHeaders.findIndex(d => d.date === dateStr);
+          if (index < 0) {
+            console.warn('Unknown date:', dateStr);
+            return 2;
+          }
+          return 2 + index * this.maxTracks;
+        },
+
+        dayColumnStart(day) {
+          const index = this.dayHeaders.findIndex(d => d.date === day.date);
+          return 2 + Math.max(0, index) * this.maxTracks;
+        },
+
+        timeToRowStart(t) {
+          const min = timeValueToMin(t);
+          if (!Number.isFinite(min)) return 2;
+          return Math.round((min - this.baseMin) / this.gridUnitMin) + 2;
+        },
+
+        timeSpan(s, e) {
+          const start = timeValueToMin(s);
+          const end = timeValueToMin(e);
+          if (!Number.isFinite(start) || !Number.isFinite(end)) return 1;
+          return Math.max(1, Math.round((end - start) / this.gridUnitMin));
+        },
+
+        eventStyle(ev) {
+          const scheme = this.colorScheme[ev.type] || {};
+
+          return {
+            gridColumn: `${ev.column} / span ${ev.colSpan}`,
+            gridRow: `${this.timeToRowStart(ev.start)} / span ${this.timeSpan(ev.start, ev.end)}`,
+            background: scheme.background || '',
+            borderColor: scheme.borderColor || '',
+            color: scheme.color || '',
+            borderStyle: scheme.borderStyle || ''
+          };
+        },
+
+        timeToMin(t) {
+          const min = timeValueToMin(t);
+          return Number.isFinite(min) ? min : 0;
+        },
+
+        formatDate(dateStr) {
+          return formatDateLabel(dateStr, this.langSuffix);
+        }
+      }
+    });
+  </script>
+</body>
+</html>
