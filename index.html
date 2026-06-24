@@ -149,12 +149,126 @@
       color: #555;
     }
 
+
+    .presentation-search-fab {
+      position: fixed;
+      right: 1.25rem;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 1040;
+      width: 3.25rem;
+      height: 3.25rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      border: 2px solid #0d6efd;
+      background: #fff;
+      color: #0d6efd;
+      box-shadow: 0 0.4rem 1rem rgba(0, 0, 0, 0.2);
+      transition: transform .2s ease, background .2s ease, color .2s ease, box-shadow .2s ease;
+    }
+
+    .presentation-search-fab:hover,
+    .presentation-search-fab:focus {
+      background: #0d6efd;
+      color: #fff;
+      transform: translateY(-50%) scale(1.06);
+      box-shadow: 0 0.55rem 1.25rem rgba(13, 110, 253, 0.35);
+    }
+
+    .presentation-search-fab.is-open {
+      background: #0d6efd;
+      color: #fff;
+    }
+
+    .presentation-search-fab .search-icon {
+      width: 1.35rem;
+      height: 1.35rem;
+      display: block;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 2.2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .presentation-search-fab .search-hit-badge {
+      position: absolute;
+      top: -0.45rem;
+      right: -0.45rem;
+      min-width: 1.35rem;
+      height: 1.35rem;
+      padding: 0 .25rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      font-size: .7rem;
+      font-weight: 600;
+    }
+
+    .presentation-search-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 1044;
+      background: rgba(0, 0, 0, 0.25);
+    }
+
+    .presentation-search-drawer {
+      position: fixed;
+      top: 0;
+      right: 0;
+      z-index: 1045;
+      width: min(24rem, calc(100vw - 2rem));
+      height: 100vh;
+      padding: 1.25rem;
+      background: #fff;
+      border-left: 1px solid #dee2e6;
+      box-shadow: -0.5rem 0 1.5rem rgba(0, 0, 0, 0.18);
+      display: flex;
+      flex-direction: column;
+      gap: .85rem;
+    }
+
+    .presentation-search-drawer-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+
+    .presentation-search-drawer-title {
+      margin: 0;
+      font-size: 1.1rem;
+      font-weight: 600;
+    }
+
+    .presentation-search-meta {
+      font-size: .85rem;
+      color: #6c757d;
+    }
+
+    .presentation-search-help {
+      font-size: .8rem;
+      color: #6c757d;
+      line-height: 1.5;
+    }
+
+    .presentation-no-results {
+      max-width: 48rem;
+    }
+
     @media (max-width: 768px) {
       body { padding: 1rem; }
       .schedule { font-size: 0.65rem; grid-auto-rows: 6px; gap: 2px; }
       .day { font-size: 0.65rem; padding: .1rem 0; }
       .time { font-size: 0.55rem; padding-right: .2rem; }
       .event { font-size: 0.55rem; padding: 0; line-height: 1.1; }
+      .presentation-search-fab { right: .75rem; bottom: .75rem; top: auto; transform: none; }
+      .presentation-search-fab:hover,
+      .presentation-search-fab:focus { transform: scale(1.06); }
+      .presentation-search-drawer { width: min(22rem, calc(100vw - 1rem)); padding: 1rem; }
       .event i { display: none; }
     }
   </style>
@@ -245,8 +359,85 @@
         </template>
       </div>
 
+
+      <button
+        type="button"
+        class="presentation-search-fab"
+        :class="{ 'is-open': presentationSearchPanelOpen }"
+        :aria-label="presentationSearchLabel"
+        :title="presentationSearchLabel"
+        @click="openPresentationSearch">
+        <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <circle cx="11" cy="11" r="7"></circle>
+          <line x1="16.5" y1="16.5" x2="21" y2="21"></line>
+        </svg>
+        <span
+          v-if="hasPresentationSearch"
+          class="badge bg-danger search-hit-badge"
+          v-text="presentationSearchHitCount">
+        </span>
+      </button>
+
+      <div
+        v-if="presentationSearchPanelOpen"
+        class="presentation-search-backdrop"
+        @click="closePresentationSearch">
+      </div>
+
+      <aside
+        v-if="presentationSearchPanelOpen"
+        class="presentation-search-drawer"
+        role="dialog"
+        aria-modal="true"
+        :aria-label="presentationSearchLabel">
+        <div class="presentation-search-drawer-header">
+          <h3 class="presentation-search-drawer-title" v-text="presentationSearchLabel"></h3>
+          <button
+            type="button"
+            class="btn-close"
+            :aria-label="presentationSearchCloseLabel"
+            @click="closePresentationSearch">
+          </button>
+        </div>
+
+        <input
+          ref="presentationSearchInput"
+          id="presentationSearchInput"
+          type="search"
+          class="form-control"
+          v-model.trim="presentationSearchQuery"
+          :placeholder="presentationSearchPlaceholder"
+          autocomplete="off"
+          @keydown.esc="closePresentationSearch">
+
+        <div class="d-flex gap-2">
+          <button
+            type="button"
+            class="btn btn-outline-secondary btn-sm"
+            :disabled="!presentationSearchQuery"
+            @click="clearPresentationSearch"
+            v-text="presentationSearchClearLabel">
+          </button>
+          <button
+            type="button"
+            class="btn btn-outline-primary btn-sm"
+            @click="closePresentationSearch"
+            v-text="presentationSearchApplyLabel">
+          </button>
+        </div>
+
+        <div class="presentation-search-meta" v-text="presentationSearchMeta"></div>
+        <div class="presentation-search-help" v-text="presentationSearchHelpText"></div>
+      </aside>
+
       <div class="text-start program-section">
-        <template v-for="day in days">
+        <p
+          v-if="hasPresentationSearch && presentationSearchHitCount === 0"
+          class="alert alert-warning presentation-no-results"
+          v-text="presentationSearchNoResultsText">
+        </p>
+
+        <template v-for="day in filteredDays">
           <h2
             :key="'heading-' + day.date"
             class="program-day-heading">
@@ -319,7 +510,7 @@
       presentations: 'presentations-test',
       sessionItems: 'session-items-test',
       colorScheme: 'color_scheme',
-      settings: 'settings-test'
+      settings: 'settings'
     };
 
     const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
@@ -591,9 +782,11 @@
           loading: true,
           errored: false,
           error: null,
+          presentationSearchQuery: '',
+          presentationSearchPanelOpen: false,
 
           settings: {},
-          maxTracks: 2,
+          maxTracks: 6,
           gridUnitMin: 5,
           rowHeightPx: 9,
           gridGapPx: 4,
@@ -639,7 +832,89 @@
             gridAutoRows: `${this.rowHeightPx}px`,
             gap: `${this.gridGapPx}px`
           };
+        },
+
+        presentationSearchLabel() {
+          return this.langSuffix === 'en' ? 'Search presentations' : '発表検索';
+        },
+
+        presentationSearchPlaceholder() {
+          return this.langSuffix === 'en'
+            ? 'Search by title, author, presentation ID, Paper ID, session...'
+            : 'タイトル・著者・発表ID・Paper ID・セッションで検索';
+        },
+
+        presentationSearchClearLabel() {
+          return this.langSuffix === 'en' ? 'Clear' : 'クリア';
+        },
+
+        presentationSearchCloseLabel() {
+          return this.langSuffix === 'en' ? 'Close search' : '検索を閉じる';
+        },
+
+        presentationSearchApplyLabel() {
+          return this.langSuffix === 'en' ? 'Show results' : '結果を表示';
+        },
+
+        presentationSearchHelpText() {
+          return this.langSuffix === 'en'
+            ? 'Search filters the presentation list below. Multiple words are treated as AND search.'
+            : '下部の発表一覧を絞り込みます。空白区切りの複数語はAND検索になります。';
+        },
+
+        presentationSearchNoResultsText() {
+          return this.langSuffix === 'en'
+            ? 'No presentations matched your search.'
+            : '該当する発表がありません。';
+        },
+
+        normalizedPresentationQuery() {
+          return this.normalizeSearchText(this.presentationSearchQuery);
+        },
+
+        hasPresentationSearch() {
+          return this.normalizedPresentationQuery.length > 0;
+        },
+
+        filteredDays() {
+          if (!this.hasPresentationSearch) return this.days;
+
+          return this.days
+            .map(day => {
+              const sessions = day.sessions
+                .map(sess => {
+                  const presentations = sess.presentations.filter(p => this.presentationMatchesQuery(p, sess, day));
+                  return Object.assign({}, sess, { presentations });
+                })
+                .filter(sess => sess.presentations.length > 0);
+
+              return Object.assign({}, day, { sessions });
+            })
+            .filter(day => day.sessions.length > 0);
+        },
+
+        presentationSearchHitCount() {
+          return this.filteredDays.reduce((total, day) => {
+            return total + day.sessions.reduce((sessionTotal, sess) => {
+              return sessionTotal + sess.presentations.length;
+            }, 0);
+          }, 0);
+        },
+
+        presentationSearchMeta() {
+          const count = this.presentationSearchHitCount;
+
+          if (this.langSuffix === 'en') {
+            return this.hasPresentationSearch
+              ? `${count} presentation${count === 1 ? '' : 's'} found`
+              : `${count} presentation${count === 1 ? '' : 's'} listed`;
+          }
+
+          return this.hasPresentationSearch
+            ? `${count}件のプレゼンテーションが見つかりました`
+            : `${count}件のプレゼンテーションを表示中`;
         }
+
       },
 
       async mounted() {
@@ -670,7 +945,8 @@
         initializeTimetable(data) {
           this.settings = parseSettings(data.settings);
 
-          this.maxTracks = toNumber(this.settings.max_tracks, 2);
+          // 1日の表示列は常に6分割しておき、track数に応じて 6 / 3 / 2 列ずつ割り当てる
+          this.maxTracks = toNumber(this.settings.display_track_units, 6);
           this.gridUnitMin = toNumber(this.settings.grid_unit_min, 5);
           const timeLabelIntervalMin = toNumber(this.settings.time_label_interval_min, 60);
           this.rowHeightPx = toNumber(this.settings.row_height_px, 9);
@@ -708,6 +984,62 @@
           return ['true', '1', 'yes', 'y', 'on', '〇', '○'].includes(s);
         },
 
+        normalizeSearchText(value) {
+          return String(value || '')
+            .toLowerCase()
+            .normalize('NFKC')
+            .replace(/\s+/g, ' ')
+            .trim();
+        },
+
+        openPresentationSearch() {
+          this.presentationSearchPanelOpen = true;
+          this.$nextTick(() => {
+            if (this.$refs.presentationSearchInput) {
+              this.$refs.presentationSearchInput.focus();
+            }
+          });
+        },
+
+        closePresentationSearch() {
+          this.presentationSearchPanelOpen = false;
+        },
+
+        clearPresentationSearch() {
+          this.presentationSearchQuery = '';
+          this.$nextTick(() => {
+            if (this.$refs.presentationSearchInput) {
+              this.$refs.presentationSearchInput.focus();
+            }
+          });
+        },
+
+        presentationMatchesQuery(p, sess, day) {
+          const query = this.normalizedPresentationQuery;
+          if (!query) return true;
+
+          const haystack = [
+            p.presentation_id,
+            p.paper_id,
+            p.title,
+            p.title_jp,
+            p.title_en,
+            p.authors,
+            p.authors_jp,
+            p.authors_en,
+            p.note,
+            sess.session_code,
+            sess.title,
+            sess.venue,
+            sess.chair,
+            day.date,
+            this.formatDate(day.date)
+          ].map(v => this.normalizeSearchText(v)).join(' ');
+
+          return query.split(' ').every(token => haystack.includes(token));
+        },
+
+
         localized(obj, base) {
           if (!obj) return '';
 
@@ -737,56 +1069,97 @@
           return map;
         },
 
-        parseTrack(raw) {
-          const maxTracks = this.maxTracks;
+        trackIndex(raw) {
+          const s = String(raw || '').toLowerCase().trim();
+          const m = s.match(/^track(\d+)(?:-(\d+))?$/);
+          if (!m) return 0;
+          return Math.max(Number(m[1]), Number(m[2] || m[1]));
+        },
+
+        timeRangesOverlap(aStart, aEnd, bStart, bEnd) {
+          return aStart < bEnd && bStart < aEnd;
+        },
+
+        trackCountForSlot(row, rows) {
+          const trackNums = rows
+            .filter(other => {
+              return other.dateStr === row.dateStr &&
+                this.timeRangesOverlap(row.startMin, row.endMin, other.startMin, other.endMin);
+            })
+            .map(other => other.trackIndex)
+            .filter(n => n > 0);
+
+          return Math.max(1, ...trackNums);
+        },
+
+        parseTrack(raw, trackCount) {
+          const units = this.maxTracks;
           const s = String(raw || 'single').toLowerCase().trim();
 
           if (!s || s === 'single' || s === 'all') {
-            return { offset: 1, span: maxTracks };
+            return { offset: 1, span: units };
           }
 
           const m = s.match(/^track(\d+)(?:-(\d+))?$/);
           if (!m) {
-            return { offset: 1, span: maxTracks };
+            return { offset: 1, span: units };
           }
+
+          const lanes = Math.max(1, Math.min(Number(trackCount) || 1, units));
+          const unitSpan = Math.max(1, Math.floor(units / lanes));
 
           let a = Number(m[1]);
           let b = Number(m[2] || m[1]);
 
-          a = Math.max(1, Math.min(a, maxTracks));
-          b = Math.max(1, Math.min(b, maxTracks));
+          a = Math.max(1, Math.min(a, lanes));
+          b = Math.max(1, Math.min(b, lanes));
 
           const start = Math.min(a, b);
           const end = Math.max(a, b);
 
           return {
-            offset: start,
-            span: end - start + 1
+            offset: (start - 1) * unitSpan + 1,
+            span: (end - start + 1) * unitSpan
           };
         },
 
         parseScheduleGrid(rawData) {
           const evs = [];
 
-          activeScheduleRows(rawData).forEach((r, index) => {
-            const dateStr = dateValueToJstDateStr(r.date);
-            const startMin = timeValueToMin(r.start);
-            const endMin = timeValueToMin(r.end);
+          const rows = activeScheduleRows(rawData)
+            .map((r, index) => {
+              const dateStr = dateValueToJstDateStr(r.date);
+              const startMin = timeValueToMin(r.start);
+              const endMin = timeValueToMin(r.end);
 
-            if (!dateStr || !Number.isFinite(startMin) || !Number.isFinite(endMin)) return;
+              if (!dateStr || !Number.isFinite(startMin) || !Number.isFinite(endMin)) return null;
 
-            const dayLeft = this.dateToColumnStart(dateStr);
-            const { offset, span } = this.parseTrack(r.track);
+              return {
+                raw: r,
+                index,
+                dateStr,
+                startMin,
+                endMin,
+                trackIndex: this.trackIndex(r.track)
+              };
+            })
+            .filter(Boolean);
+
+          rows.forEach(row => {
+            const r = row.raw;
+            const dayLeft = this.dateToColumnStart(row.dateStr);
+            const trackCount = this.trackCountForSlot(row, rows);
+            const { offset, span } = this.parseTrack(r.track, trackCount);
             const col = dayLeft + (offset - 1);
 
             evs.push({
-              key: `${dateStr}-${startMin}-${endMin}-${r.session_code || index}`,
+              key: `${row.dateStr}-${row.startMin}-${row.endMin}-${r.session_code || row.index}`,
               column: col,
               colSpan: span,
               type: r.type || 'etc',
-              label: this.localized(r, 'label') || this.localized(r, 'title') || `${minToTimeStr(startMin)}–${minToTimeStr(endMin)}`,
-              start: minToTimeStr(startMin),
-              end: minToTimeStr(endMin),
+              label: this.localized(r, 'label') || this.localized(r, 'title') || `${minToTimeStr(row.startMin)}–${minToTimeStr(row.endMin)}`,
+              start: minToTimeStr(row.startMin),
+              end: minToTimeStr(row.endMin),
               show_program: toBool(r.show_program),
               session_code: String(r.session_code || '').trim()
             });
